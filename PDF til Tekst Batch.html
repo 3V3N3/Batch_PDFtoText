@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <title>Batch PDF til Tekst</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      background: #f9f9f9;
+      color: #333;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 1rem;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    input[type="file"],
+    button {
+      display: block;
+      margin: 1rem auto;
+      padding: 0.75rem;
+      font-size: 1rem;
+    }
+    button {
+      background: #007acc;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #005fa3;
+    }
+    #status {
+      margin-top: 1rem;
+      font-style: italic;
+    }
+  </style>
+  
+  <!-- Last inn PDF.js fra CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script>
+    // Sett opp PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js";
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>Batch PDF til Tekst</h1>
+    <input type="file" id="pdfFiles" accept="application/pdf" multiple>
+    <button id="convertBtn">Konverter til TXT</button>
+    <div id="status"></div>
+  </div>
+  
+  <script>
+    document.getElementById("convertBtn").addEventListener("click", function() {
+      const files = document.getElementById("pdfFiles").files;
+      const statusDiv = document.getElementById("status");
+      
+      // Nullstill status
+      statusDiv.textContent = "";
+      
+      if (files.length === 0) {
+        alert("Vennligst velg minst én PDF-fil!");
+        return;
+      }
+      
+      statusDiv.textContent = "Starter konvertering...";
+      
+      let conversionPromises = [];
+      
+      Array.from(files).forEach(file => {
+        let conversionPromise = new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const typedarray = new Uint8Array(e.target.result);
+            
+            pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+              const totalPages = pdf.numPages;
+              let pageTextPromises = [];
+              
+              // Hent tekst fra hver side i PDF-en
+              for (let i = 1; i <= totalPages; i++) {
+                pageTextPromises.push(
+                  pdf.getPage(i).then(page => {
+                    return page.getTextContent().then(textContent => {
+                      return textContent.items.map(item => item.str).join(" ");
+                    });
+                  })
+                );
+              }
+              
+              Promise.all(pageTextPromises).then(pageTexts => {
+                const fullText = pageTexts.join("\n\n");
+                // Lag en TXT-blob med hentet tekst
+                const blob = new Blob([fullText], { type: "text/plain" });
+                let newFileName;
+                if (file.name.toLowerCase().endsWith(".pdf")) {
+                  newFileName = file.name.slice(0, -4) + ".txt";
+                } else {
+                  newFileName = file.name + ".txt";
+                }
+                const url = URL.createObjectURL(blob);
+                
+                // Opprett en midlertidig lenke og simuler et klikk for automatisk nedlasting
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = newFileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                statusDiv.textContent = "Konvertert: " + file.name;
+                resolve();
+              }).catch(err => {
+                console.error(err);
+                statusDiv.textContent = "Feil ved behandling av sider for " + file.name;
+                resolve();
+              });
+            }).catch(err => {
+              console.error(err);
+              statusDiv.textContent = "Kunne ikke laste PDF " + file.name;
+              resolve();
+            });
+          };
+          reader.readAsArrayBuffer(file);
+        });
+        conversionPromises.push(conversionPromise);
+      });
+      
+      Promise.all(conversionPromises).then(() => {
+        statusDiv.textContent = "Alle filer er konvertert!";
+      });
+    });
+  </script>
+</body>
+</html>
